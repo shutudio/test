@@ -100,14 +100,28 @@
   // ====== 로직 ======
   function movePlayerBy(dx,dy) {
     const nx = px + dx, ny = py + dy;
-    if (!isBorder(nx,ny)) {
-      px = nx; py = ny;
-      collide();
+    if (isBorder(nx,ny)) {
+      // 벽에 닿으면 사망 처리
+      if (hitCooldown <= 0 && lives > 0) {
+        lives = Math.max(0, lives - 1);
+        px = Math.floor(W/2); py = Math.floor(H/2);
+        hitCooldown = HIT_IFRAME_MS;
+        if (lives === 0) {
+          running = false;
+        }
+      }
       draw();
+      return;
     }
+    px = nx; py = ny;
+    collide();
+    draw();
   }
 
   function moveEnemies() {
+    // 일정 점수 이상부터만 적이 움직임 (50점 이상)
+    if (score < 50) return;
+    
     enemies = enemies.map(([ex,ey])=>{
       let dx=0, dy=0, r=rnd(0,99);
       if (r < 50) {
