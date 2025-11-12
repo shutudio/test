@@ -1,0 +1,205 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>WASD Runner (Web)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background:#111; color:#eee; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre  { line-height: 1.1; font-size: 16px; padding: 12px; outline: none; }
+</style>
+<pre id="screen" tabindex="0"></pre>
+<script>
+(() => {
+  // ====== 닉네임 & 스코어 저장 ======
+  const NICK_KEY   = 'game_test_nick';
+  const SCORE_KEY  = 'game_test_best'; // 닉네임별 최고점 저장
+  function getNick() {
+    let n = localStorage.getItem(NICK_KEY);
+    if (!n) {
+      n = prompt('닉네임을 입력하세요(최대 16자):') || 'Player';
+      n = String(n).slice(0, 16);
+      try { localStorage.setItem(NICK_KEY, n); } catch {}
+    }
+    return n;
+  }
+  function saveBest(name, score) {
+    const key = `${SCORE_KEY}:${name}`;
+    let best = 0;
+    try { best = parseInt(localStorage.getItem(key) || '0', 10); } catch {}
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem(key, String(best)); } catch {}
+    }
+    return best;
+  }
+  function loadBest(name) {
+    const key = `${SCORE_KEY}:${name}`;
+    let best = 0;
+    try { best = parseInt(localStorage.getItem(key) || '0', 10); } catch {}
+    return best;
+  }
+
+  // ====== 게임 상태 ======
+  const W = 30, H = 12;
+  let px, py, lives, score, running, hitCooldown;
+  const TICK_MS = 70;
+  const HIT_IFRAME_MS = 800; // 0.8s 무적
+  let enemies = [], coins = [];
+  const screen = document.getElementById('screen');
+  const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+  const isBorder = (x,y) => (x===0 || y===0 || x===W-1 || y===H-1);
+  const nick = getNick();
+
+  function resetGame() {
+    px = Math.floor(W/2); py = Math.floor(H/2);
+    lives = 3; score = 0; running = true;
+    hitCooldown = 0;
+    enemies.length = 0; coins.length = 0;
+    spawnInitial();
+  }
+
+  // ====== 스폰 ======
+  function spawnInitial() {
+    for (let i=0;i<3;i++){
+      let ex=rnd(1,W-2), ey=rnd(1,H-2);
+      if (ex===px && ey===py) { i--; continue; }
+      enemies.push([ex,ey]);
+    }
+    for (let i=0;i<5;i++){
+      let cx=rnd(1,W-2), cy=rnd(1,H-2);
+      if (cx===px && cy===py) { i--; continue; }
+      coins.push([cx,cy]);
+    }
+  }
+
+  // ====== 렌더 ======
+  function draw(extraLines=[]) {
+    const buf = [];
+    const livesView = Math.max(0, lives);
+    const invText   = hitCooldown > 0 ? " (무적)" : "";
+    buf.push(`WASD/Arrow 이동, Q:종료, R:재시작 | o:코인 E:적  #:벽`);
+    buf.push(`Player: ${nick}  Lives: ${livesView}${invText}  Score: ${score}  Best: ${loadBest(nick)}`);
+
+    for (let y=0;y<H;y++) {
+      let row = "";
+      for (let x=0;x<W;x++) row += isBorder(x,y) ? "#" : " ";
+      buf.push(row);
+    }
+    const put = (x,y,ch) => {
+      const i = y+2;
+      const line = buf[i];
+      buf[i] = line.slice(0,x) + ch + line.slice(x+1);
+    };
+    for (const [cx,cy] of coins)   put(cx,cy,'o');
+    for (const [ex,ey] of enemies) put(ex,ey,'E');
+    put(px,py,'@');
+
+    for (const line of extraLines) buf.push(line);
+    screen.textContent = buf.join("\n");
+  }
+
+  // ====== 로직 ======
+  function movePlayerBy(dx,dy) {
+    const nx = px + dx, ny = py + dy;
+    if (!isBorder(nx,ny)) {
+      px = nx; py = ny;
+      collide();
+      draw();
+    }
+  }
+
+  function moveEnemies() {
+    enemies = enemies.map(([ex,ey])=>{
+      let dx=0, dy=0, r=rnd(0,99);
+      if (r < 50) {
+        dx = px<ex?-1 : px>ex?1:0;
+        dy = py<ey?-1 : py>ey?1:0;
+        if (dx && dy && rnd(0,1)) dy = 0;
+      } else {
+        [[dx,dy]] = [[1,0],[-1,0],[0,1],[0,-1]][rnd(0,3)];
+      }
+      const nx = ex+dx, ny = ey+dy;
+      return isBorder(nx,ny) ? [ex,ey] : [nx,ny];
+    });
+  }
+
+  function collide() {
+    // 코인
+    for (let i=0;i<coins.length; ) {
+      if (coins[i][0] === px && coins[i][1] === py) {
+        score += 10;
+        coins.splice(i,1);
+        if (rnd(1,100) <= 60) coins.push([rnd(1,W-2), rnd(1,H-2)]);
+      } else { i++; }
+    }
+    // 적(무적 쿨다운 + 클램프)
+    const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
+    if (hit && hitCooldown <= 0 && lives > 0) {
+      lives = Math.max(0, lives - 1);
+      px = Math.floor(W/2); py = Math.floor(H/2);
+      hitCooldown = HIT_IFRAME_MS;
+      if (lives === 0) {
+        running = false;
+      }
+    }
+  }
+
+  // ====== 메인 루프 (고정틱) ======
+  let last = performance.now(), acc = 0;
+  function loop(now) {
+    const dt = now - last;         // ★ dt 정의
+    last = now;
+    acc += dt;
+
+    // 무적 시간 감소
+    hitCooldown = Math.max(0, hitCooldown - dt);
+
+    while (acc >= TICK_MS && running && lives > 0) {
+      moveEnemies();
+      collide();
+      if (score > 0 && score % 100 === 0 && rnd(1,100) <= 25) {
+        enemies.push([rnd(1,W-2), rnd(1,H-2)]);
+      }
+      acc -= TICK_MS;
+    }
+
+    if (!running || lives <= 0) {
+      // 게임오버: 점수 저장 + 메시지
+      const best = saveBest(nick, score);
+      const lines = [
+        "",
+        "===== GAME OVER =====",
+        `최종 점수: ${score}   최고 점수(${nick}): ${best}`,
+        "",
+        "R: 재시작, Q: 종료"
+      ];
+      draw(lines);
+      return;
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ====== 입력 (물리키 e.code 사용: 한글/영문 무관) ======
+  window.addEventListener('keydown', (e) => {
+    const c = e.code;
+    if (c === 'KeyQ') { running = false; return; }
+    if (c === 'KeyR') { resetGame(); draw(); last = performance.now(); requestAnimationFrame(loop); return; }
+    if (!running || lives <= 0) return; // 게임오버 상태에선 이동 무시
+
+    if (c === 'KeyW' || c === 'ArrowUp')    movePlayerBy(0,-1);
+    else if (c === 'KeyS' || c === 'ArrowDown') movePlayerBy(0, 1);
+    else if (c === 'KeyA' || c === 'ArrowLeft') movePlayerBy(-1,0);
+    else if (c === 'KeyD' || c === 'ArrowRight')movePlayerBy( 1,0);
+  });
+
+  // 포커스 보장
+  screen.addEventListener('click', () => screen.focus());
+  screen.focus();
+
+  // ====== 시작 ======
+  resetGame();
+  draw();
+  requestAnimationFrame(loop);
+})();
+</script>
