@@ -11,7 +11,7 @@
 (() => {
   // ====== 닉네임 & 스코어 저장 ======
   const NICK_KEY   = 'game_test_nick';
-  const SCORE_KEY  = 'game_test_best'; // 닉네임별 최고점 저장
+  const SCORE_KEY  = 'game_test_best';
   function getNick() {
     let n = localStorage.getItem(NICK_KEY);
     if (!n) {
@@ -42,18 +42,27 @@
   const W = 30, H = 12;
   let px, py, lives, score, running, hitCooldown;
   const TICK_MS = 70;
-  const HIT_IFRAME_MS = 800; // 0.8s 무적
+  const HIT_IFRAME_MS = 800;
   let enemies = [], coins = [];
   const screen = document.getElementById('screen');
   const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
   const isBorder = (x,y) => (x===0 || y===0 || x===W-1 || y===H-1);
   const nick = getNick();
+  let gameLoopId = null;
+  let lastEnemySpawnScore = 0;
+  let enemyMoveCounter = 0;
 
   function resetGame() {
-    px = Math.floor(W/2); py = Math.floor(H/2);
-    lives = 3; score = 0; running = true;
+    px = Math.floor(W/2); 
+    py = Math.floor(H/2);
+    lives = 3; 
+    score = 0; 
+    running = true;
     hitCooldown = 0;
-    enemies.length = 0; coins.length = 0;
+    enemies.length = 0; 
+    coins.length = 0;
+    lastEnemySpawnScore = 0;
+    enemyMoveCounter = 0;
     spawnInitial();
   }
 
@@ -101,10 +110,10 @@
   function movePlayerBy(dx,dy) {
     const nx = px + dx, ny = py + dy;
     if (isBorder(nx,ny)) {
-      // 벽에 닿으면 사망 처리 (무적 시간 체크)
       if (hitCooldown <= 0 && lives > 0) {
         lives = Math.max(0, lives - 1);
-        px = Math.floor(W/2); py = Math.floor(H/2);
+        px = Math.floor(W/2); 
+        py = Math.floor(H/2);
         hitCooldown = HIT_IFRAME_MS;
         if (lives === 0) {
           running = false;
@@ -113,50 +122,40 @@
       draw();
       return;
     }
-    px = nx; py = ny;
+    px = nx; 
+    py = ny;
     collide();
     draw();
   }
 
   function moveEnemies() {
-    // 스코어 60 미만: 적이 움직이지 않음
     if (score < 60) return;
     
-    enemies = enemies.map(([ex,ey])=>{
-      let dx=0, dy=0;
-      
-      if (score >= 120) {
-        // 스코어 120 이상: 플레이어 추적
-        if (px < ex) dx = -1;
-        else if (px > ex) dx = 1;
-        if (py < ey) dy = -1;
-        else if (py > ey) dy = 1;
-        // 대각선 이동 시 한 방향만 선택
-        if (dx !== 0 && dy !== 0) {
-          if (rnd(0,1) === 0) dx = 0;
-          else dy = 0;
-        }
-      } else {
-        // 스코어 60 이상 120 미만: 무작위 이동
-        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-        [dx,dy] = dirs[rnd(0,3)];
-      }
-      
-      // 이동이 없으면 그대로 유지
-      if (dx === 0 && dy === 0) return [ex,ey];
+    let moveInterval = 5;
+    if (score >= 100) moveInterval = 4;
+    if (score >= 200) moveInterval = 3;
+    if (score >= 300) moveInterval = 2;
+    
+    enemyMoveCounter++;
+    if (enemyMoveCounter % moveInterval !== 0) return;
+    
+    for (let i = 0; i < enemies.length; i++) {
+      const [ex, ey] = enemies[i];
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      const [dx,dy] = dirs[rnd(0,3)];
       
       const nx = ex+dx, ny = ey+dy;
-      return isBorder(nx,ny) ? [ex,ey] : [nx,ny];
-    });
+      if (!isBorder(nx,ny)) {
+        enemies[i] = [nx, ny];
+      }
+    }
   }
 
   function collide() {
-    // 코인
     for (let i=0;i<coins.length; ) {
       if (coins[i][0] === px && coins[i][1] === py) {
         score += 10;
         coins.splice(i,1);
-        // 코인 등장 확률 100%로 변경 (플레이어/적/벽과 겹치지 않도록 재추첨)
         let attempts = 0;
         let cx, cy;
         do {
@@ -168,14 +167,16 @@
                  coins.some(([cx2,cy2]) => cx2 === cx && cy2 === cy)) &&
                  attempts < 50);
         coins.push([cx,cy]);
-      } else { i++; }
+      } else { 
+        i++; 
+      }
     }
-    // 적(무적 쿨다운 + 클램프)
-    // hitCooldown이 정확히 0 이하일 때만 피격 처리
+    
     const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
     if (hit && hitCooldown <= 0 && lives > 0) {
       lives = Math.max(0, lives - 1);
-      px = Math.floor(W/2); py = Math.floor(H/2);
+      px = Math.floor(W/2); 
+      py = Math.floor(H/2);
       hitCooldown = HIT_IFRAME_MS;
       if (lives === 0) {
         running = false;
@@ -183,18 +184,17 @@
     }
   }
 
-  // ====== 메인 루프 (고정틱) ======
-  let last = performance.now(), acc = 0;
+  // ====== 메인 루프 ======
+  let last = performance.now();
   function loop(now) {
-    const dt = now - last;         // ★ dt 정의
+    const dt = now - last;
     last = now;
-    acc += dt;
+    let acc = (window.gameAcc || 0) + dt;
 
-    // 무적 시간 감소 (항상 실행)
     hitCooldown = Math.max(0, hitCooldown - dt);
 
     if (!running || lives <= 0) {
-      // 게임오버: 점수 저장 + 메시지
+      hitCooldown = 0;
       const best = saveBest(nick, score);
       const lines = [
         "",
@@ -204,29 +204,41 @@
         "R: 재시작, Q: 종료"
       ];
       draw(lines);
-      requestAnimationFrame(loop); // 게임오버 상태에서도 루프 계속 실행
       return;
     }
 
     while (acc >= TICK_MS && running && lives > 0) {
       moveEnemies();
       collide();
-      if (score > 0 && score % 100 === 0 && rnd(1,100) <= 25) {
+      if (score >= 100 && score > lastEnemySpawnScore && (score - lastEnemySpawnScore) % 100 === 0 && rnd(1,100) <= 25) {
         enemies.push([rnd(1,W-2), rnd(1,H-2)]);
+        lastEnemySpawnScore = score;
       }
       acc -= TICK_MS;
     }
 
+    window.gameAcc = acc;
     draw();
-    requestAnimationFrame(loop);
+    gameLoopId = requestAnimationFrame(loop);
   }
 
-  // ====== 입력 (물리키 e.code 사용: 한글/영문 무관) ======
+  // ====== 입력 ======
   window.addEventListener('keydown', (e) => {
     const c = e.code;
-    if (c === 'KeyQ') { running = false; return; }
-    if (c === 'KeyR') { resetGame(); draw(); last = performance.now(); requestAnimationFrame(loop); return; }
-    if (!running || lives <= 0) return; // 게임오버 상태에선 이동 무시
+    if (c === 'KeyQ') { 
+      running = false; 
+      return; 
+    }
+    if (c === 'KeyR') { 
+      if (gameLoopId) cancelAnimationFrame(gameLoopId);
+      resetGame();
+      window.gameAcc = 0;
+      last = performance.now();
+      draw();
+      gameLoopId = requestAnimationFrame(loop);
+      return; 
+    }
+    if (!running || lives <= 0) return;
 
     if (c === 'KeyW' || c === 'ArrowUp')    movePlayerBy(0,-1);
     else if (c === 'KeyS' || c === 'ArrowDown') movePlayerBy(0, 1);
@@ -234,13 +246,12 @@
     else if (c === 'KeyD' || c === 'ArrowRight')movePlayerBy( 1,0);
   });
 
-  // 포커스 보장
   screen.addEventListener('click', () => screen.focus());
   screen.focus();
 
   // ====== 시작 ======
   resetGame();
   draw();
-  requestAnimationFrame(loop);
+  gameLoopId = requestAnimationFrame(loop);
 })();
 </script>
