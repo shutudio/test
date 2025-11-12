@@ -127,13 +127,23 @@
       
       if (score >= 120) {
         // 스코어 120 이상: 플레이어 추적
-        dx = px<ex?-1 : px>ex?1:0;
-        dy = py<ey?-1 : py>ey?1:0;
-        if (dx && dy && rnd(0,1)) dy = 0; // 대각선 이동 시 한 방향만
+        if (px < ex) dx = -1;
+        else if (px > ex) dx = 1;
+        if (py < ey) dy = -1;
+        else if (py > ey) dy = 1;
+        // 대각선 이동 시 한 방향만 선택
+        if (dx !== 0 && dy !== 0) {
+          if (rnd(0,1) === 0) dx = 0;
+          else dy = 0;
+        }
       } else {
         // 스코어 60 이상 120 미만: 무작위 이동
-        [[dx,dy]] = [[1,0],[-1,0],[0,1],[0,-1]][rnd(0,3)];
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+        [dx,dy] = dirs[rnd(0,3)];
       }
+      
+      // 이동이 없으면 그대로 유지
+      if (dx === 0 && dy === 0) return [ex,ey];
       
       const nx = ex+dx, ny = ey+dy;
       return isBorder(nx,ny) ? [ex,ey] : [nx,ny];
@@ -162,15 +172,13 @@
     }
     // 적(무적 쿨다운 + 클램프)
     // hitCooldown이 정확히 0 이하일 때만 피격 처리
-    if (hitCooldown <= 0) {
-      const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
-      if (hit && lives > 0) {
-        lives = Math.max(0, lives - 1);
-        px = Math.floor(W/2); py = Math.floor(H/2);
-        hitCooldown = HIT_IFRAME_MS;
-        if (lives === 0) {
-          running = false;
-        }
+    const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
+    if (hit && hitCooldown <= 0 && lives > 0) {
+      lives = Math.max(0, lives - 1);
+      px = Math.floor(W/2); py = Math.floor(H/2);
+      hitCooldown = HIT_IFRAME_MS;
+      if (lives === 0) {
+        running = false;
       }
     }
   }
