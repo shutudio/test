@@ -101,7 +101,7 @@
   function movePlayerBy(dx,dy) {
     const nx = px + dx, ny = py + dy;
     if (isBorder(nx,ny)) {
-      // 벽에 닿으면 사망 처리
+      // 벽에 닿으면 사망 처리 (무적 시간 체크)
       if (hitCooldown <= 0 && lives > 0) {
         lives = Math.max(0, lives - 1);
         px = Math.floor(W/2); py = Math.floor(H/2);
@@ -119,18 +119,22 @@
   }
 
   function moveEnemies() {
-    // 일정 점수 이상부터만 적이 움직임 (50점 이상)
-    if (score < 50) return;
+    // 스코어 60 미만: 적이 움직이지 않음
+    if (score < 60) return;
     
     enemies = enemies.map(([ex,ey])=>{
-      let dx=0, dy=0, r=rnd(0,99);
-      if (r < 50) {
+      let dx=0, dy=0;
+      
+      if (score >= 120) {
+        // 스코어 120 이상: 플레이어 추적
         dx = px<ex?-1 : px>ex?1:0;
         dy = py<ey?-1 : py>ey?1:0;
-        if (dx && dy && rnd(0,1)) dy = 0;
+        if (dx && dy && rnd(0,1)) dy = 0; // 대각선 이동 시 한 방향만
       } else {
+        // 스코어 60 이상 120 미만: 무작위 이동
         [[dx,dy]] = [[1,0],[-1,0],[0,1],[0,-1]][rnd(0,3)];
       }
+      
       const nx = ex+dx, ny = ey+dy;
       return isBorder(nx,ny) ? [ex,ey] : [nx,ny];
     });
@@ -142,17 +146,31 @@
       if (coins[i][0] === px && coins[i][1] === py) {
         score += 10;
         coins.splice(i,1);
-        if (rnd(1,100) <= 60) coins.push([rnd(1,W-2), rnd(1,H-2)]);
+        // 코인 등장 확률 100%로 변경 (플레이어/적/벽과 겹치지 않도록 재추첨)
+        let attempts = 0;
+        let cx, cy;
+        do {
+          cx = rnd(1,W-2);
+          cy = rnd(1,H-2);
+          attempts++;
+        } while (((cx === px && cy === py) || 
+                 enemies.some(([ex,ey]) => ex === cx && ey === cy) ||
+                 coins.some(([cx2,cy2]) => cx2 === cx && cy2 === cy)) &&
+                 attempts < 50);
+        coins.push([cx,cy]);
       } else { i++; }
     }
     // 적(무적 쿨다운 + 클램프)
-    const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
-    if (hit && hitCooldown <= 0 && lives > 0) {
-      lives = Math.max(0, lives - 1);
-      px = Math.floor(W/2); py = Math.floor(H/2);
-      hitCooldown = HIT_IFRAME_MS;
-      if (lives === 0) {
-        running = false;
+    // hitCooldown이 정확히 0 이하일 때만 피격 처리
+    if (hitCooldown <= 0) {
+      const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
+      if (hit && lives > 0) {
+        lives = Math.max(0, lives - 1);
+        px = Math.floor(W/2); py = Math.floor(H/2);
+        hitCooldown = HIT_IFRAME_MS;
+        if (lives === 0) {
+          running = false;
+        }
       }
     }
   }
