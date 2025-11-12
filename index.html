@@ -38,6 +38,21 @@
     return best;
   }
 
+  function getTopScores() {
+    const scores = [];
+    try {
+      for (let key in localStorage) {
+        if (key.startsWith(SCORE_KEY + ':')) {
+          const name = key.substring((SCORE_KEY + ':').length);
+          const score = parseInt(localStorage.getItem(key) || '0', 10);
+          scores.push([name, score]);
+        }
+      }
+    } catch {}
+    scores.sort((a, b) => b[1] - a[1]);
+    return scores.slice(0, 10);
+  }
+
   // ====== 게임 상태 ======
   const W = 30, H = 12;
   let px, py, lives, score, running, hitCooldown;
@@ -196,13 +211,23 @@
     if (!running || lives <= 0) {
       hitCooldown = 0;
       const best = saveBest(nick, score);
+      const topScores = getTopScores();
       const lines = [
         "",
         "===== GAME OVER =====",
         `최종 점수: ${score}   최고 점수(${nick}): ${best}`,
-        "",
-        "R: 재시작, Q: 종료"
+        ""
       ];
+      
+      if (topScores.length > 0) {
+        lines.push("===== TOP 10 =====");
+        topScores.forEach((item, idx) => {
+          lines.push(`${idx + 1}. ${item[0]}: ${item[1]}`);
+        });
+        lines.push("");
+      }
+      
+      lines.push("R: 재시작, Q: 종료");
       draw(lines);
       return;
     }
