@@ -7,78 +7,8 @@
   pre  { line-height: 1.1; font-size: 16px; padding: 12px; outline: none; }
 </style>
 <pre id="screen" tabindex="0"></pre>
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-
+<script>
 (() => {
-  // ====== Firebase 설정 ======
-  const firebaseConfig = {
-    apiKey: 'YOUR_FIREBASE_API_KEY',
-    authDomain: 'YOUR_FIREBASE_AUTH_DOMAIN',
-    projectId: 'YOUR_FIREBASE_PROJECT_ID',
-    storageBucket: 'YOUR_FIREBASE_STORAGE_BUCKET',
-    messagingSenderId: 'YOUR_FIREBASE_SENDER_ID',
-    appId: 'YOUR_FIREBASE_APP_ID'
-  };
-
-  let firebaseApp = null;
-  let firestoreDb = null;
-  let firebaseEnabled = false;
-
-  function initFirebase() {
-    const placeholderValues = Object.values(firebaseConfig).some((value) =>
-      typeof value === 'string' && value.startsWith('YOUR_FIREBASE_')
-    );
-    if (placeholderValues) {
-      console.warn('Firebase config is using placeholder values. Online leaderboard disabled.');
-      return;
-    }
-    try {
-      firebaseApp = initializeApp(firebaseConfig);
-      firestoreDb = getFirestore(firebaseApp);
-      firebaseEnabled = true;
-      console.info('Firebase initialized successfully.');
-    } catch (err) {
-      console.warn('Failed to initialize Firebase:', err);
-    }
-  }
-
-  initFirebase();
-
-  async function submitOnlineScore(name, score) {
-    if (!firebaseEnabled || !firestoreDb) return;
-    if (typeof score !== 'number' || score <= 0) return;
-    const safeName = String(name || 'Player').slice(0, 32);
-    try {
-      await addDoc(collection(firestoreDb, 'leaderboard'), {
-        name: safeName,
-        score,
-        createdAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.warn('Failed to submit score to leaderboard:', err);
-      throw err;
-    }
-  }
-
-  async function fetchOnlineLeaderboard(limitCount = 10) {
-    if (!firebaseEnabled || !firestoreDb) return [];
-    try {
-      const snapshot = await getDocs(
-        query(
-          collection(firestoreDb, 'leaderboard'),
-          orderBy('score', 'desc'),
-          limit(limitCount)
-        )
-      );
-      return snapshot.docs.map((doc) => doc.data()).filter((entry) => typeof entry?.score === 'number');
-    } catch (err) {
-      console.warn('Failed to fetch leaderboard:', err);
-      throw err;
-    }
-  }
-
   // ====== 닉네임 & 스코어 저장 ======
   const NICK_KEY   = 'game_test_nick';
   const SCORE_KEY  = 'game_test_best';
@@ -256,7 +186,7 @@ import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limi
         i++; 
       }
     }
-
+    
     const hit = enemies.some(([ex,ey]) => ex === px && ey === py);
     if (hit && hitCooldown <= 0 && lives > 0) {
       lives = Math.max(0, lives - 1);
@@ -269,62 +199,6 @@ import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limi
     }
   }
 
-  function showGameOver() {
-    hitCooldown = 0;
-    const best = saveBest(nick, score);
-    const baseLines = [
-      '',
-      '===== GAME OVER =====',
-      `최종 점수: ${score}   최고 점수(${nick}): ${best}`,
-      ''
-    ];
-
-    if (!firebaseEnabled) {
-      const localTop = getTopScores();
-      if (localTop.length > 0) {
-        baseLines.push('===== TOP 10 (Local) =====');
-        localTop.forEach(([name, bestScore], idx) => {
-          baseLines.push(`${idx + 1}. ${name}: ${bestScore}`);
-        });
-        baseLines.push('');
-      }
-      baseLines.push('R: 재시작, Q: 종료');
-      draw(baseLines);
-      return;
-    }
-
-    const pendingLines = [...baseLines, '온라인 리더보드 갱신 중...', '', 'R: 재시작, Q: 종료'];
-    draw(pendingLines);
-
-    submitOnlineScore(nick, score)
-      .catch((err) => {
-        console.warn('Leaderboard submit failed:', err);
-        throw err;
-      })
-      .then(() => fetchOnlineLeaderboard(10))
-      .then((entries) => {
-        const lines = [...baseLines];
-        if (entries.length > 0) {
-          lines.push('===== ONLINE TOP 10 =====');
-          entries.forEach((entry, idx) => {
-          const lineName = typeof entry.name === 'string' ? entry.name : 'Player';
-          lines.push(`${idx + 1}. ${lineName}: ${entry.score}`);
-          });
-          lines.push('');
-        } else {
-          lines.push('온라인 리더보드 데이터가 없습니다.');
-          lines.push('');
-        }
-        lines.push('R: 재시작, Q: 종료');
-        draw(lines);
-      })
-      .catch((err) => {
-        const message = err && err.message ? String(err.message) : '네트워크 오류';
-        const errorLines = [...baseLines, '온라인 리더보드 갱신 실패', message, '', 'R: 재시작, Q: 종료'];
-        draw(errorLines);
-      });
-  }
-
   // ====== 메인 루프 ======
   let last = performance.now();
   function loop(now) {
@@ -335,7 +209,26 @@ import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limi
     hitCooldown = Math.max(0, hitCooldown - dt);
 
     if (!running || lives <= 0) {
-      showGameOver();
+      hitCooldown = 0;
+      const best = saveBest(nick, score);
+      const topScores = getTopScores();
+      const lines = [
+        "",
+        "===== GAME OVER =====",
+        `최종 점수: ${score}   최고 점수(${nick}): ${best}`,
+        ""
+      ];
+      
+      if (topScores.length > 0) {
+        lines.push("===== TOP 10 =====");
+        topScores.forEach((item, idx) => {
+          lines.push(`${idx + 1}. ${item[0]}: ${item[1]}`);
+        });
+        lines.push("");
+      }
+      
+      lines.push("R: 재시작, Q: 종료");
+      draw(lines);
       return;
     }
 
@@ -383,7 +276,6 @@ import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limi
 
   // ====== 시작 ======
   resetGame();
-  window.gameAcc = 0;
   draw();
   gameLoopId = requestAnimationFrame(loop);
 })();
