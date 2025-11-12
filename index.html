@@ -164,17 +164,8 @@
     last = now;
     acc += dt;
 
-    // 무적 시간 감소
+    // 무적 시간 감소 (항상 실행)
     hitCooldown = Math.max(0, hitCooldown - dt);
-
-    while (acc >= TICK_MS && running && lives > 0) {
-      moveEnemies();
-      collide();
-      if (score > 0 && score % 100 === 0 && rnd(1,100) <= 25) {
-        enemies.push([rnd(1,W-2), rnd(1,H-2)]);
-      }
-      acc -= TICK_MS;
-    }
 
     if (!running || lives <= 0) {
       // 게임오버: 점수 저장 + 메시지
@@ -187,7 +178,17 @@
         "R: 재시작, Q: 종료"
       ];
       draw(lines);
+      requestAnimationFrame(loop); // 게임오버 상태에서도 루프 계속 실행
       return;
+    }
+
+    while (acc >= TICK_MS && running && lives > 0) {
+      moveEnemies();
+      collide();
+      if (score > 0 && score % 100 === 0 && rnd(1,100) <= 25) {
+        enemies.push([rnd(1,W-2), rnd(1,H-2)]);
+      }
+      acc -= TICK_MS;
     }
 
     draw();
